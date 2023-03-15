@@ -4,6 +4,9 @@
 	"description": "Extracting archives made easy",
 	"license": "MIT",
 	"repository": "XhmikosR/decompress",
+	"publishConfig": {
+		"access": "public"
+	},
 	"author": {
 		"name": "Kevin Mårtensson",
 		"email": "kevinmartensson@gmail.com",
