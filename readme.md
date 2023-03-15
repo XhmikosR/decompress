@@ -1,4 +1,4 @@
-# decompress [![CI](https://github.com/kevva/decompress/actions/workflows/ci.yml/badge.svg)](https://github.com/kevva/decompress/actions/workflows/ci.yml)
+# decompress [![CI](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml/badge.svg)](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml)
 
 > Extracting archives made easy
 
@@ -7,14 +7,14 @@
 ## Install
 
 ```sh
-npm install decompress
+npm install @xhmikosr/decompress
 ```
 
 
 ## Usage
 
 ```js
-import decompress from 'decompress';
+import decompress from '@xhmikosr/decompress';
 
 decompress('unicorn.zip', 'dist').then(files => {
 	console.log('done!');
