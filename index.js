@@ -1,16 +1,22 @@
 import {Buffer} from 'node:buffer';
 import path from 'node:path';
 import process from 'node:process';
+import {promisify} from 'node:util';
 import decompressTar from 'decompress-tar';
 import decompressTarbz2 from 'decompress-tarbz2';
 import decompressTargz from 'decompress-targz';
 import decompressUnzip from 'decompress-unzip';
 import fs from 'graceful-fs';
 import makeDir from 'make-dir';
-import pify from 'pify';
 import stripDirs from 'strip-dirs';
 
-const fsP = pify(fs);
+const link = promisify(fs.link);
+const readFile = promisify(fs.readFile);
+const readlink = promisify(fs.readlink);
+const realpath = promisify(fs.realpath);
+const symlink = promisify(fs.symlink);
+const utimes = promisify(fs.utimes);
+const writeFile = promisify(fs.writeFile);
 
 const runPlugins = (input, options) => {
 	if (options.plugins.length === 0) {
@@ -22,7 +28,7 @@ const runPlugins = (input, options) => {
 		.then(files => files.reduce((a, b) => [...a, ...b]));
 };
 
-const safeMakeDir = (dir, realOutputPath) => fsP.realpath(dir)
+const safeMakeDir = (dir, realOutputPath) => realpath(dir)
 	.catch(_ => {
 		const parent = path.dirname(dir);
 		return safeMakeDir(parent, realOutputPath);
@@ -32,10 +38,10 @@ const safeMakeDir = (dir, realOutputPath) => fsP.realpath(dir)
 			throw new Error('Refusing to create a directory outside the output path.');
 		}
 
-		return makeDir(dir).then(fsP.realpath);
+		return makeDir(dir).then(realpath);
 	});
 
-const preventWritingThroughSymlink = (destination, realOutputPath) => fsP.readlink(destination)
+const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
 	// Either no file exists, or it's not a symlink. In either case, this is
 	// not an escape we need to worry about in this phase.
 	.catch(_ => null)
@@ -79,26 +85,22 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 
 		if (x.type === 'directory') {
 			return makeDir(output)
-				.then(outputPath => fsP.realpath(outputPath))
+				.then(outputPath => realpath(outputPath))
 				.then(realOutputPath => safeMakeDir(dest, realOutputPath))
-				.then(() => fsP.utimes(dest, now, x.mtime))
+				.then(() => utimes(dest, now, x.mtime))
 				.then(() => x);
 		}
 
 		return makeDir(output)
-			.then(outputPath => fsP.realpath(outputPath))
+			.then(outputPath => realpath(outputPath))
 			.then(realOutputPath =>
 				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
 				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath),
 			)
-			.then(realOutputPath => {
-				if (x.type === 'file') {
-					return preventWritingThroughSymlink(dest, realOutputPath);
-				}
-
-				return realOutputPath;
-			})
-			.then(realOutputPath => fsP.realpath(path.dirname(dest))
+			.then(realOutputPath => x.type === 'file'
+				? preventWritingThroughSymlink(dest, realOutputPath)
+				: realOutputPath)
+			.then(realOutputPath => realpath(path.dirname(dest))
 				.then(realDestinationDir => {
 					if (realDestinationDir.indexOf(realOutputPath) !== 0) {
 						throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
@@ -106,20 +108,20 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 				}))
 			.then(() => {
 				if (x.type === 'link') {
-					return fsP.link(x.linkname, dest);
+					return link(x.linkname, dest);
 				}
 
 				if (x.type === 'symlink' && process.platform === 'win32') {
-					return fsP.link(x.linkname, dest);
+					return link(x.linkname, dest);
 				}
 
 				if (x.type === 'symlink') {
-					return fsP.symlink(x.linkname, dest);
+					return symlink(x.linkname, dest);
 				}
 
-				return fsP.writeFile(dest, x.data, {mode});
+				return writeFile(dest, x.data, {mode});
 			})
-			.then(() => x.type === 'file' && fsP.utimes(dest, now, x.mtime))
+			.then(() => x.type === 'file' && utimes(dest, now, x.mtime))
 			.then(() => x);
 	}));
 });
@@ -144,7 +146,7 @@ const decompress = (input, output, options) => {
 		...options,
 	};
 
-	const read = typeof input === 'string' ? fsP.readFile(input) : Promise.resolve(input);
+	const read = typeof input === 'string' ? readFile(input) : Promise.resolve(input);
 
 	return read.then(buf => extractFile(buf, output, options));
 };

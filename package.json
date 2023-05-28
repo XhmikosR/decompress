@@ -10,14 +10,15 @@
 	"author": {
 		"name": "Kevin Mårtensson",
 		"email": "kevinmartensson@gmail.com",
-		"url": "github.com/kevva"
+		"url": "https://github.com/kevva"
 	},
 	"engines": {
-		"node": "^12.20.0 || ^14.14.0 || >=16.0.0"
+		"node": "^14.14.0 || >=16.0.0"
 	},
 	"scripts": {
 		"ava": "ava",
 		"xo": "xo",
+		"fix": "xo --fix",
 		"test": "npm run xo && npm run ava",
 		"test-ci": "npm run xo && c8 ava"
 	},
@@ -45,17 +46,15 @@
 		"decompress-tarbz2": "^4.1.1",
 		"decompress-targz": "^4.1.1",
 		"decompress-unzip": "^4.0.1",
-		"graceful-fs": "^4.2.10",
+		"graceful-fs": "^4.2.11",
 		"make-dir": "^3.1.0",
-		"pify": "^5.0.0",
 		"strip-dirs": "^3.0.0"
 	},
 	"devDependencies": {
-		"ava": "^4.3.0",
-		"c8": "^7.11.3",
+		"ava": "^5.3.0",
+		"c8": "^7.13.0",
 		"is-jpg": "^3.0.0",
 		"path-exists": "^5.0.0",
-		"rimraf": "^3.0.2",
-		"xo": "^0.49.0"
+		"xo": "^0.54.2"
 	}
 }
