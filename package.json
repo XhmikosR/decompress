@@ -17,10 +17,11 @@
 	},
 	"scripts": {
 		"ava": "ava",
+		"lint": "xo",
 		"xo": "xo",
 		"fix": "xo --fix",
 		"test": "npm run xo && npm run ava",
-		"test-ci": "npm run xo && c8 ava"
+		"test-ci": "c8 ava"
 	},
 	"main": "index.js",
 	"type": "module",
