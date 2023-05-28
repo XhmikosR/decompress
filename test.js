@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import isJpg from 'is-jpg';
@@ -12,6 +13,7 @@ import decompress from './index.js';
 const fsP = pify(fs);
 const rimrafP = promisify(rimraf);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isWindows = process.platform === 'win32';
 
 test.serial.afterEach('ensure decompressed files and directories are cleaned up', async () => {
 	await rimrafP(path.join(__dirname, 'directory'));
@@ -63,7 +65,7 @@ test.serial('extract file to directory', async t => {
 	t.true(await pathExists(path.join(__dirname, 'test.jpg')));
 });
 
-test.serial('extract symlink', async t => {
+(isWindows ? test.skip : test.serial)('extract symlink', async t => {
 	await decompress(path.join(__dirname, 'fixtures', 'symlink.tar'), __dirname, {strip: 1});
 	t.is(await fsP.realpath(path.join(__dirname, 'symlink')), path.join(__dirname, 'file.txt'));
 });
@@ -119,13 +121,13 @@ test.serial('throw when a location outside the root is given', async t => {
 	}, {message: /Refusing/});
 });
 
-test.serial('throw when a location outside the root including symlinks is given', async t => {
+(isWindows ? test.skip : test.serial)('throw when a location outside the root including symlinks is given', async t => {
 	await t.throwsAsync(async () => {
 		await decompress(path.join(__dirname, 'fixtures', 'slip.zip'), 'dist');
 	}, {message: /Refusing/});
 });
 
-test.serial('throw when a top-level symlink outside the root is given', async t => {
+(isWindows ? test.skip : test.serial)('throw when a top-level symlink outside the root is given', async t => {
 	await t.throwsAsync(async () => {
 		await decompress(path.join(__dirname, 'fixtures', 'slip2.zip'), 'dist');
 	}, {message: /Refusing/});
@@ -156,7 +158,7 @@ test.serial('allows top-level file', async t => {
 	t.is(files[0].path, 'example.txt');
 });
 
-test.serial('throw when chained symlinks to /tmp/dist allow escape outside root directory', async t => {
+(isWindows ? test.skip : test.serial)('throw when chained symlinks to /tmp/dist allow escape outside root directory', async t => {
 	await t.throwsAsync(async () => {
 		await decompress(path.join(__dirname, 'fixtures', 'slip3.zip'), '/tmp/dist');
 	}, {message: /Refusing/});
