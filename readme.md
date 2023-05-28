@@ -1,4 +1,4 @@
-# decompress [![CI](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml/badge.svg)](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml)
+# decompress [![CI](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/XhmikosR/decompress/actions/workflows/ci.yml)
 
 > Extracting archives made easy
 
