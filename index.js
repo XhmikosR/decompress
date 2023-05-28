@@ -18,8 +18,8 @@ const runPlugins = (input, options) => {
 	}
 
 	return Promise.all(options.plugins.map(x => x(input, options)))
-		// eslint-disable-next-line unicorn/no-array-reduce, unicorn/prefer-spread
-		.then(files => files.reduce((a, b) => a.concat(b)));
+		// eslint-disable-next-line unicorn/no-array-reduce
+		.then(files => files.reduce((a, b) => [...a, ...b]));
 };
 
 const safeMakeDir = (dir, realOutputPath) => fsP.realpath(dir)
