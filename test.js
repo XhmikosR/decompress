@@ -1,28 +1,23 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
-import {promisify} from 'node:util';
 import isJpg from 'is-jpg';
 import {pathExists} from 'path-exists';
-import pify from 'pify';
-import rimraf from 'rimraf';
 import test from 'ava';
 import decompress from './index.js';
 
-const fsP = pify(fs);
-const rimrafP = promisify(rimraf);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';
 
 test.serial.afterEach('ensure decompressed files and directories are cleaned up', async () => {
-	await rimrafP(path.join(__dirname, 'directory'));
-	await rimrafP(path.join(__dirname, 'dist'));
-	await rimrafP(path.join(__dirname, 'example.txt'));
-	await rimrafP(path.join(__dirname, 'file.txt'));
-	await rimrafP(path.join(__dirname, 'edge_case_dots'));
-	await rimrafP(path.join(__dirname, 'symlink'));
-	await rimrafP(path.join(__dirname, 'test.jpg'));
+	await fs.rm(path.join(__dirname, 'directory'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'dist'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'example.txt'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'file.txt'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'edge_case_dots'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'symlink'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'test.jpg'), {force: true, recursive: true});
 });
 
 test('extract file', async t => {
@@ -42,13 +37,13 @@ test('extract file', async t => {
 });
 
 test('extract file using buffer', async t => {
-	const tarBuf = await fsP.readFile(path.join(__dirname, 'fixtures', 'file.tar'));
+	const tarBuf = await fs.readFile(path.join(__dirname, 'fixtures', 'file.tar'));
 	const tarFiles = await decompress(tarBuf);
-	const tarbzBuf = await fsP.readFile(path.join(__dirname, 'fixtures', 'file.tar.bz2'));
+	const tarbzBuf = await fs.readFile(path.join(__dirname, 'fixtures', 'file.tar.bz2'));
 	const tarbzFiles = await decompress(tarbzBuf);
-	const targzBuf = await fsP.readFile(path.join(__dirname, 'fixtures', 'file.tar.gz'));
+	const targzBuf = await fs.readFile(path.join(__dirname, 'fixtures', 'file.tar.gz'));
 	const targzFiles = await decompress(targzBuf);
-	const zipBuf = await fsP.readFile(path.join(__dirname, 'fixtures', 'file.zip'));
+	const zipBuf = await fs.readFile(path.join(__dirname, 'fixtures', 'file.zip'));
 	const zipFiles = await decompress(zipBuf);
 
 	t.is(tarFiles[0].path, 'test.jpg');
@@ -67,7 +62,7 @@ test.serial('extract file to directory', async t => {
 
 (isWindows ? test.skip : test.serial)('extract symlink', async t => {
 	await decompress(path.join(__dirname, 'fixtures', 'symlink.tar'), __dirname, {strip: 1});
-	t.is(await fsP.realpath(path.join(__dirname, 'symlink')), path.join(__dirname, 'file.txt'));
+	t.is(await fs.realpath(path.join(__dirname, 'symlink')), path.join(__dirname, 'file.txt'));
 });
 
 test.serial('extract directory', async t => {
@@ -106,7 +101,7 @@ test('map option', async t => {
 
 test.serial('set mtime', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), __dirname);
-	const stat = await fsP.stat(path.join(__dirname, 'test.jpg'));
+	const stat = await fs.stat(path.join(__dirname, 'test.jpg'));
 	t.deepEqual(files[0].mtime, stat.mtime);
 });
 
