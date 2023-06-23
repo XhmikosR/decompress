@@ -48,7 +48,7 @@
 		"@xhmikosr/decompress-targz": "^7.0.0",
 		"@xhmikosr/decompress-unzip": "^6.0.0",
 		"graceful-fs": "^4.2.11",
-		"make-dir": "^3.1.0",
+		"make-dir": "^4.0.0",
 		"strip-dirs": "^3.0.0"
 	},
 	"devDependencies": {
