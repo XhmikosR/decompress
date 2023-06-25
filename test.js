@@ -105,7 +105,7 @@ test.serial('set mtime', async t => {
 	t.deepEqual(files[0].mtime, stat.mtime);
 });
 
-test('return emptpy array if no plugins are set', async t => {
+test('return empty array if no plugins are set', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), {plugins: []});
 	t.is(files.length, 0);
 });
