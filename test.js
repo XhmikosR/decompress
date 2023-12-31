@@ -20,6 +20,12 @@ test.serial.afterEach('ensure decompressed files and directories are cleaned up'
 	await fs.rm(path.join(__dirname, 'test.jpg'), {force: true, recursive: true});
 });
 
+test('throw when invalid input is passed', async t => {
+	await t.throwsAsync(async () => {
+		await decompress([]);
+	}, {message: 'Input file required'});
+});
+
 test('extract file', async t => {
 	const tarFiles = await decompress(path.join(__dirname, 'fixtures', 'file.tar'));
 	const tarbzFiles = await decompress(path.join(__dirname, 'fixtures', 'file.tar.bz2'));
