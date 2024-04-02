@@ -46,9 +46,9 @@
 		"unzip"
 	],
 	"dependencies": {
-		"@xhmikosr/decompress-tar": "^8.0.0",
-		"@xhmikosr/decompress-tarbz2": "^8.0.0",
-		"@xhmikosr/decompress-targz": "^8.0.0",
+		"@xhmikosr/decompress-tar": "^8.0.1",
+		"@xhmikosr/decompress-tarbz2": "^8.0.1",
+		"@xhmikosr/decompress-targz": "^8.0.1",
 		"@xhmikosr/decompress-unzip": "^7.0.0",
 		"graceful-fs": "^4.2.11",
 		"make-dir": "^4.0.0",
