@@ -49,7 +49,7 @@
 		"@xhmikosr/decompress-tar": "^9.0.0",
 		"@xhmikosr/decompress-tarbz2": "^9.0.1",
 		"@xhmikosr/decompress-targz": "^9.0.1",
-		"@xhmikosr/decompress-unzip": "^8.0.0",
+		"@xhmikosr/decompress-unzip": "github:XhmikosR/decompress-unzip#xmr/deps",
 		"graceful-fs": "^4.2.11",
 		"strip-dirs": "^3.0.0"
 	},
