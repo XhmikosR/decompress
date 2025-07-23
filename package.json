@@ -46,10 +46,10 @@
 		"unzip"
 	],
 	"dependencies": {
-		"@xhmikosr/decompress-tar": "^8.1.0",
-		"@xhmikosr/decompress-tarbz2": "^8.1.0",
-		"@xhmikosr/decompress-targz": "^8.1.0",
-		"@xhmikosr/decompress-unzip": "^7.1.0",
+		"@xhmikosr/decompress-tar": "github:XhmikosR/decompress-tar#xmr/deps",
+		"@xhmikosr/decompress-tarbz2": "github:XhmikosR/decompress-tarbz2#xmr/deps",
+		"@xhmikosr/decompress-targz": "github:XhmikosR/decompress-targz#xmr/deps",
+		"@xhmikosr/decompress-unzip": "github:XhmikosR/decompress-unzip#xmr/deps",
 		"graceful-fs": "^4.2.11",
 		"strip-dirs": "^3.0.0"
 	},
