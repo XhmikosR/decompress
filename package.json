@@ -49,12 +49,12 @@
 		"@xhmikosr/decompress-tar": "^9.0.0",
 		"@xhmikosr/decompress-tarbz2": "^9.0.1",
 		"@xhmikosr/decompress-targz": "^9.0.1",
-		"@xhmikosr/decompress-unzip": "^8.0.1",
+		"@xhmikosr/decompress-unzip": "^8.1.0",
 		"graceful-fs": "^4.2.11",
 		"strip-dirs": "^3.0.0"
 	},
 	"devDependencies": {
-		"ava": "^6.4.1",
+		"ava": "^7.0.0",
 		"c8": "^11.0.0",
 		"file-type": "^21.3.0",
 		"xo": "^1.2.3"
