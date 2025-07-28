@@ -7,10 +7,10 @@ import decompressTarbz2 from '@xhmikosr/decompress-tarbz2';
 import decompressTargz from '@xhmikosr/decompress-targz';
 import decompressUnzip from '@xhmikosr/decompress-unzip';
 import fs from 'graceful-fs';
-import makeDir from 'make-dir';
 import stripDirs from 'strip-dirs';
 
 const link = promisify(fs.link);
+const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
 const readlink = promisify(fs.readlink);
 const realpath = promisify(fs.realpath);
@@ -38,7 +38,7 @@ const safeMakeDir = (dir, realOutputPath) => realpath(dir)
 			throw new Error('Refusing to create a directory outside the output path.');
 		}
 
-		return makeDir(dir).then(realpath);
+		return mkdir(dir, {recursive: true}).then(() => realpath(dir));
 	});
 
 const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
@@ -84,15 +84,15 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 		const now = new Date();
 
 		if (x.type === 'directory') {
-			return makeDir(output)
-				.then(outputPath => realpath(outputPath))
+			return mkdir(output, {recursive: true})
+				.then(() => realpath(output))
 				.then(realOutputPath => safeMakeDir(dest, realOutputPath))
 				.then(() => utimes(dest, now, x.mtime))
 				.then(() => x);
 		}
 
-		return makeDir(output)
-			.then(outputPath => realpath(outputPath))
+		return mkdir(output, {recursive: true})
+			.then(() => realpath(output))
 			.then(realOutputPath =>
 				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
 				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath),
