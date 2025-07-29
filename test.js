@@ -3,12 +3,20 @@ import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import isJpg from 'is-jpg';
-import {pathExists} from 'path-exists';
 import test from 'ava';
 import decompress from './index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';
+
+const pathExists = async path => {
+	try {
+		await fs.access(path);
+		return true;
+	} catch {
+		return false;
+	}
+};
 
 test.serial.afterEach('ensure decompressed files and directories are cleaned up', async () => {
 	await fs.rm(path.join(__dirname, 'directory'), {force: true, recursive: true});
