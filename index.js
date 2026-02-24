@@ -95,8 +95,7 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 			.then(() => realpath(output))
 			.then(realOutputPath =>
 				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
-				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath),
-			)
+				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath))
 			.then(realOutputPath => x.type === 'file'
 				? preventWritingThroughSymlink(dest, realOutputPath)
 				: realOutputPath)

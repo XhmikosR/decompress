@@ -16,7 +16,7 @@
 		"url": "https://github.com/kevva"
 	},
 	"engines": {
-		"node": ">=18"
+		"node": ">=20"
 	},
 	"scripts": {
 		"ava": "ava",
@@ -46,18 +46,18 @@
 		"unzip"
 	],
 	"dependencies": {
-		"@xhmikosr/decompress-tar": "^8.1.0",
-		"@xhmikosr/decompress-tarbz2": "^8.1.0",
-		"@xhmikosr/decompress-targz": "^8.1.0",
-		"@xhmikosr/decompress-unzip": "^7.1.0",
+		"@xhmikosr/decompress-tar": "^9.0.0",
+		"@xhmikosr/decompress-tarbz2": "^9.0.0",
+		"@xhmikosr/decompress-targz": "^9.0.0",
+		"@xhmikosr/decompress-unzip": "^8.0.0",
 		"graceful-fs": "^4.2.11",
 		"strip-dirs": "^3.0.0"
 	},
 	"devDependencies": {
-		"ava": "~6.2.0",
+		"ava": "^6.4.1",
 		"c8": "^10.1.3",
 		"is-jpg": "^3.0.0",
-		"xo": "^0.60.0"
+		"xo": "^1.2.3"
 	},
 	"xo": {
 		"rules": {
