@@ -47,7 +47,7 @@
 	],
 	"dependencies": {
 		"@xhmikosr/decompress-tar": "^9.0.0",
-		"@xhmikosr/decompress-tarbz2": "^9.0.0",
+		"@xhmikosr/decompress-tarbz2": "^9.0.1",
 		"@xhmikosr/decompress-targz": "^9.0.1",
 		"@xhmikosr/decompress-unzip": "^8.0.0",
 		"graceful-fs": "^4.2.11",
