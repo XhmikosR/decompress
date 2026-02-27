@@ -2,12 +2,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
-import isJpg from 'is-jpg';
 import test from 'ava';
+import {fileTypeFromBuffer} from 'file-type';
 import decompress from './index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';
+
+async function isJpg(input) {
+	const fileType = await fileTypeFromBuffer(input);
+	return fileType?.ext === 'jpg';
+}
 
 const pathExists = async path => {
 	try {
@@ -41,13 +46,13 @@ test('extract file', async t => {
 	const zipFiles = await decompress(path.join(__dirname, 'fixtures', 'file.zip'));
 
 	t.is(tarFiles[0].path, 'test.jpg');
-	t.true(isJpg(tarFiles[0].data));
+	t.true(await isJpg(tarFiles[0].data));
 	t.is(tarbzFiles[0].path, 'test.jpg');
-	t.true(isJpg(tarbzFiles[0].data));
+	t.true(await isJpg(tarbzFiles[0].data));
 	t.is(targzFiles[0].path, 'test.jpg');
-	t.true(isJpg(targzFiles[0].data));
+	t.true(await isJpg(targzFiles[0].data));
 	t.is(zipFiles[0].path, 'test.jpg');
-	t.true(isJpg(zipFiles[0].data));
+	t.true(await isJpg(zipFiles[0].data));
 });
 
 test('extract file using buffer', async t => {
@@ -70,7 +75,7 @@ test.serial('extract file to directory', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), __dirname);
 
 	t.is(files[0].path, 'test.jpg');
-	t.true(isJpg(files[0].data));
+	t.true(await isJpg(files[0].data));
 	t.true(await pathExists(path.join(__dirname, 'test.jpg')));
 });
 
@@ -89,9 +94,9 @@ test('strip option', async t => {
 	const tarFiles = await decompress(path.join(__dirname, 'fixtures', 'strip.tar'), {strip: 1});
 
 	t.is(zipFiles[0].path, 'test-strip.jpg');
-	t.true(isJpg(zipFiles[0].data));
+	t.true(await isJpg(zipFiles[0].data));
 	t.is(tarFiles[0].path, 'test-strip.jpg');
-	t.true(isJpg(tarFiles[0].data));
+	t.true(await isJpg(tarFiles[0].data));
 });
 
 test('filter option', async t => {
