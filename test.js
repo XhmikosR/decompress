@@ -11,7 +11,7 @@ const isWindows = process.platform === 'win32';
 
 async function isJpg(input) {
 	const fileType = await fileTypeFromBuffer(input);
-	return fileType?.ext === 'jpg';
+	return fileType?.mime === 'image/jpeg';
 }
 
 const pathExists = async path => {
