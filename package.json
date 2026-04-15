@@ -56,12 +56,13 @@
 	"devDependencies": {
 		"ava": "^7.0.0",
 		"c8": "^11.0.0",
-		"file-type": "^21.3.0",
-		"xo": "^1.2.3"
+		"file-type": "^21.3.4",
+		"xo": "^2.0.2"
 	},
 	"xo": {
 		"rules": {
 			"promise/prefer-await-to-then": "off",
+			"require-unicode-regexp": "off",
 			"unicorn/prevent-abbreviations": "off"
 		}
 	}

@@ -156,14 +156,16 @@ test.serial('throw when a directory outside the root including symlinks is given
 test.serial('allows filenames and directories to be written with dots in their names', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'edge_case_dots.tar.gz'), __dirname);
 	t.is(files.length, 6);
-	t.deepEqual(files.map(f => f.path).sort(), [
+	const result = files.map(f => f.path).toSorted();
+	const expected = [
 		'edge_case_dots/',
 		'edge_case_dots/internal_dots..txt',
 		'edge_case_dots/sample../',
 		'edge_case_dots/ending_dots..',
 		'edge_case_dots/x',
 		'edge_case_dots/sample../test.txt',
-	].sort());
+	].toSorted();
+	t.deepEqual(result, expected);
 });
 
 test.serial('allows top-level file', async t => {
