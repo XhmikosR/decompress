@@ -28,9 +28,11 @@ test.serial.afterEach('ensure decompressed files and directories are cleaned up'
 	await fs.rm(path.join(__dirname, 'dist'), {force: true, recursive: true});
 	await fs.rm(path.join(__dirname, 'example.txt'), {force: true, recursive: true});
 	await fs.rm(path.join(__dirname, 'file.txt'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'hardlink.txt'), {force: true, recursive: true});
 	await fs.rm(path.join(__dirname, 'edge_case_dots'), {force: true, recursive: true});
 	await fs.rm(path.join(__dirname, 'symlink'), {force: true, recursive: true});
 	await fs.rm(path.join(__dirname, 'test.jpg'), {force: true, recursive: true});
+	await fs.rm(path.join(__dirname, 'test-link'), {force: true, recursive: true});
 });
 
 test('throw when invalid input is passed', async t => {
@@ -116,6 +118,30 @@ test('map option', async t => {
 	});
 
 	t.is(files[0].path, 'unicorn-test.jpg');
+});
+
+test.serial('extract hardlink entries to directory', async t => {
+	await fs.mkdir(path.join(__dirname, 'test-link'), {recursive: true});
+	await fs.writeFile(path.join(__dirname, 'test-link', 'file.txt'), 'hardlink fixture');
+
+	const files = await decompress(path.join(__dirname, 'fixtures', 'link.tar'), __dirname);
+	const linkEntry = files.find(f => f.type === 'link');
+	t.truthy(linkEntry);
+	t.true(await pathExists(path.join(__dirname, 'test-link', 'hardlink.txt')));
+	t.is(await fs.readFile(path.join(__dirname, 'test-link', 'hardlink.txt'), 'utf8'), 'hardlink fixture');
+});
+
+(isWindows ? test.skip : test.serial)('throw when destination path is an existing symlink', async t => {
+	// file.tar extracts test.jpg - place a symlink there so the guard triggers
+	const symlinkDest = path.join(__dirname, 'test.jpg');
+	const symlinkTarget = path.join(__dirname, 'file.txt');
+	await fs.writeFile(symlinkTarget, 'symlink-target');
+	await fs.symlink(symlinkTarget, symlinkDest);
+
+	await t.throwsAsync(
+		decompress(path.join(__dirname, 'fixtures', 'file.tar'), __dirname),
+		{message: 'Refusing to write into a symlink'},
+	);
 });
 
 test.serial('set mtime', async t => {
