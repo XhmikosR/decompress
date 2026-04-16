@@ -18,43 +18,56 @@ const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
 const writeFile = promisify(fs.writeFile);
 
-const runPlugins = (input, options) => {
+const runPlugins = async (input, options) => {
 	if (options.plugins.length === 0) {
-		return Promise.resolve([]);
+		return [];
 	}
 
-	return Promise.all(options.plugins.map(x => x(input, options)))
-		// eslint-disable-next-line unicorn/no-array-reduce
-		.then(files => files.reduce((a, b) => [...a, ...b]));
+	const files = await Promise.all(options.plugins.map(x => x(input, options)));
+
+	// eslint-disable-next-line unicorn/no-array-reduce
+	return files.reduce((a, b) => [...a, ...b]);
 };
 
-const safeMakeDir = (dir, realOutputPath) => realpath(dir)
-	.catch(_ => {
+const safeMakeDir = async (dir, realOutputPath) => {
+	let realParentPath;
+
+	try {
+		realParentPath = await realpath(dir);
+	} catch {
 		const parent = path.dirname(dir);
-		return safeMakeDir(parent, realOutputPath);
-	})
-	.then(realParentPath => {
-		if (realParentPath.indexOf(realOutputPath) !== 0) {
-			throw new Error('Refusing to create a directory outside the output path.');
-		}
+		realParentPath = await safeMakeDir(parent, realOutputPath);
+	}
 
-		return mkdir(dir, {recursive: true}).then(() => realpath(dir));
-	});
+	if (realParentPath.indexOf(realOutputPath) !== 0) {
+		throw new Error('Refusing to create a directory outside the output path.');
+	}
 
-const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
-	// Either no file exists, or it's not a symlink. In either case, this is
-	// not an escape we need to worry about in this phase.
-	.catch(_ => null)
-	.then(symlinkPointsTo => {
-		if (symlinkPointsTo) {
-			throw new Error('Refusing to write into a symlink');
-		}
+	await mkdir(dir, {recursive: true});
+	return realpath(dir);
+};
 
-		// No symlink exists at `destination`, so we can continue
-		return realOutputPath;
-	});
+const preventWritingThroughSymlink = async (destination, realOutputPath) => {
+	let symlinkPointsTo = null;
 
-const extractFile = (input, output, options) => runPlugins(input, options).then(files => {
+	try {
+		symlinkPointsTo = await readlink(destination);
+	} catch {
+		// Either no file exists, or it's not a symlink. In either case, this is
+		// not an escape we need to worry about in this phase.
+	}
+
+	if (symlinkPointsTo) {
+		throw new Error('Refusing to write into a symlink');
+	}
+
+	// No symlink exists at `destination`, so we can continue
+	return realOutputPath;
+};
+
+const extractFile = async (input, output, options) => {
+	let files = await runPlugins(input, options);
+
 	if (options.strip > 0) {
 		files = files
 			.map(x => {
@@ -78,56 +91,55 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 		return files;
 	}
 
-	return Promise.all(files.map(x => {
+	return Promise.all(files.map(async x => {
 		const dest = path.join(output, x.path);
 		const mode = x.mode & ~process.umask(); // eslint-disable-line no-bitwise
 		const now = new Date();
 
 		if (x.type === 'directory') {
-			return mkdir(output, {recursive: true})
-				.then(() => realpath(output))
-				.then(realOutputPath => safeMakeDir(dest, realOutputPath))
-				.then(() => utimes(dest, now, x.mtime))
-				.then(() => x);
+			await mkdir(output, {recursive: true});
+			const realOutputPath = await realpath(output);
+			await safeMakeDir(dest, realOutputPath);
+			await utimes(dest, now, x.mtime);
+			return x;
 		}
 
-		return mkdir(output, {recursive: true})
-			.then(() => realpath(output))
-			.then(realOutputPath =>
-				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
-				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath))
-			.then(realOutputPath => x.type === 'file'
-				? preventWritingThroughSymlink(dest, realOutputPath)
-				: realOutputPath)
-			.then(realOutputPath => realpath(path.dirname(dest))
-				.then(realDestinationDir => {
-					if (realDestinationDir.indexOf(realOutputPath) !== 0) {
-						throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
-					}
-				}))
-			.then(() => {
-				if (x.type === 'link') {
-					return link(x.linkname, dest);
-				}
+		await mkdir(output, {recursive: true});
+		const realOutputPath = await realpath(output);
 
-				if (x.type === 'symlink' && process.platform === 'win32') {
-					return link(x.linkname, dest);
-				}
+		// Attempt to ensure parent directory exists (failing if it's outside the output dir)
+		await safeMakeDir(path.dirname(dest), realOutputPath);
 
-				if (x.type === 'symlink') {
-					return symlink(x.linkname, dest);
-				}
+		if (x.type === 'file') {
+			await preventWritingThroughSymlink(dest, realOutputPath);
+		}
 
-				return writeFile(dest, x.data, {mode});
-			})
-			.then(() => x.type === 'file' && utimes(dest, now, x.mtime))
-			.then(() => x);
+		const realDestinationDir = await realpath(path.dirname(dest));
+		if (realDestinationDir.indexOf(realOutputPath) !== 0) {
+			throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
+		}
+
+		if (x.type === 'link') {
+			await link(x.linkname, dest);
+		} else if (x.type === 'symlink' && process.platform === 'win32') {
+			await link(x.linkname, dest);
+		} else if (x.type === 'symlink') {
+			await symlink(x.linkname, dest);
+		} else {
+			await writeFile(dest, x.data, {mode});
+		}
+
+		if (x.type === 'file') {
+			await utimes(dest, now, x.mtime);
+		}
+
+		return x;
 	}));
-});
+};
 
-const decompress = (input, output, options) => {
+const decompress = async (input, output, options) => {
 	if (typeof input !== 'string' && !Buffer.isBuffer(input)) {
-		return Promise.reject(new TypeError('Input file required'));
+		throw new TypeError('Input file required');
 	}
 
 	if (typeof output === 'object') {
@@ -145,9 +157,9 @@ const decompress = (input, output, options) => {
 		...options,
 	};
 
-	const read = typeof input === 'string' ? readFile(input) : Promise.resolve(input);
+	const buffer = typeof input === 'string' ? await readFile(input) : input;
 
-	return read.then(buf => extractFile(buf, output, options));
+	return extractFile(buffer, output, options);
 };
 
 export default decompress;
