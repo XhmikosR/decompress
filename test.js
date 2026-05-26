@@ -201,7 +201,16 @@ test.serial('allows top-level file', async t => {
 });
 
 (isWindows ? test.skip : test.serial)('throw when chained symlinks to /tmp/dist allow escape outside root directory', async t => {
-	await t.throwsAsync(async () => {
-		await decompress(path.join(__dirname, 'fixtures', 'slip3.zip'), '/tmp/dist');
-	}, {message: /Refusing/});
+	// slip3.zip embeds hardcoded `/tmp/dist` symlinks, so the test must use that path.
+	// Guard against removing a pre-existing /tmp/dist that doesn't belong to this test.
+	const directory = '/tmp/dist';
+	t.false(await pathExists(directory), `${directory} already exists - refusing to overwrite`);
+
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'slip3.zip'), directory);
+		}, {message: /Refusing/});
+	} finally {
+		await fs.rm(directory, {force: true, recursive: true});
+	}
 });
