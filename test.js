@@ -179,6 +179,18 @@ test.serial('throw when a directory outside the root including symlinks is given
 	}, {message: /Refusing/});
 });
 
+(isWindows ? test.skip : test.serial)('throw when a symlink resolves to a sibling directory that shares the output prefix', async t => {
+	const siblingDir = path.join(__dirname, 'dist-sibling');
+	await fs.mkdir(siblingDir, {recursive: true});
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'sibling_prefix.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+	} finally {
+		await fs.rm(siblingDir, {force: true, recursive: true});
+	}
+});
+
 test.serial('allows filenames and directories to be written with dots in their names', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'edge_case_dots.tar.gz'), __dirname);
 	t.is(files.length, 6);
@@ -192,6 +204,14 @@ test.serial('allows filenames and directories to be written with dots in their n
 		'edge_case_dots/sample../test.txt',
 	].toSorted();
 	t.deepEqual(result, expected);
+});
+
+test.serial('allows files and directories whose names begin with dots', async t => {
+	const files = await decompress(path.join(__dirname, 'fixtures', 'leading_dots.tar.gz'), 'dist');
+	t.is(files.length, 2);
+	const result = files.map(f => f.path).toSorted();
+	t.deepEqual(result, ['..foo/', '..foo/inside.txt'].toSorted());
+	t.true(await pathExists(path.join(__dirname, 'dist', '..foo', 'inside.txt')));
 });
 
 test.serial('allows top-level file', async t => {

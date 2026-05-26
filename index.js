@@ -29,6 +29,12 @@ const runPlugins = async (input, options) => {
 	return files.reduce((a, b) => [...a, ...b]);
 };
 
+const isInsideOutput = (target, root) => {
+	const rel = path.relative(root, target);
+	// '' is the dir itself; a `..` or an absolute path (different drive on Windows) is outside it
+	return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+};
+
 const safeMakeDir = async (dir, realOutputPath) => {
 	let realParentPath;
 
@@ -39,7 +45,7 @@ const safeMakeDir = async (dir, realOutputPath) => {
 		realParentPath = await safeMakeDir(parent, realOutputPath);
 	}
 
-	if (realParentPath.indexOf(realOutputPath) !== 0) {
+	if (!isInsideOutput(realParentPath, realOutputPath)) {
 		throw new Error('Refusing to create a directory outside the output path.');
 	}
 
@@ -115,7 +121,7 @@ const extractFile = async (input, output, options) => {
 		}
 
 		const realDestinationDir = await realpath(path.dirname(dest));
-		if (realDestinationDir.indexOf(realOutputPath) !== 0) {
+		if (!isInsideOutput(realDestinationDir, realOutputPath)) {
 			throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
 		}
 
