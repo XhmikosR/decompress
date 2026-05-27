@@ -53,6 +53,29 @@ const safeMakeDir = async (dir, realOutputPath) => {
 	return realpath(dir);
 };
 
+const ensureLinkTargetInsideOutput = async (linkname, linkBase, realOutputPath) => {
+	const target = path.resolve(linkBase, linkname);
+
+	if (!isInsideOutput(target, realOutputPath)) {
+		throw new Error(`Refusing to create a link pointing outside the output directory: ${target}`);
+	}
+
+	// An existing target may itself be a symlink that escapes, so check its real path
+	let realTarget;
+	try {
+		realTarget = await realpath(target);
+	} catch {
+		// Dangling link; the path check above covers it
+		return target;
+	}
+
+	if (!isInsideOutput(realTarget, realOutputPath)) {
+		throw new Error(`Refusing to create a link pointing outside the output directory: ${realTarget}`);
+	}
+
+	return target;
+};
+
 const preventWritingThroughSymlink = async (destination, realOutputPath) => {
 	let symlinkPointsTo = null;
 
@@ -116,26 +139,27 @@ const extractFile = async (input, output, options) => {
 		// Attempt to ensure parent directory exists (failing if it's outside the output dir)
 		await safeMakeDir(path.dirname(dest), realOutputPath);
 
-		if (x.type === 'file') {
-			await preventWritingThroughSymlink(dest, realOutputPath);
-		}
-
 		const realDestinationDir = await realpath(path.dirname(dest));
 		if (!isInsideOutput(realDestinationDir, realOutputPath)) {
 			throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
 		}
 
 		if (x.type === 'link') {
-			await link(x.linkname, dest);
+			// Hardlink target is relative to the extraction root
+			const target = await ensureLinkTargetInsideOutput(x.linkname, realOutputPath, realOutputPath);
+			await link(target, dest);
 		} else if (x.type === 'symlink' && process.platform === 'win32') {
-			await link(x.linkname, dest);
+			// No symlinks on Windows; emulate with a hardlink relative to the link's dir
+			const target = await ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath);
+			await link(target, dest);
 		} else if (x.type === 'symlink') {
+			// Target is relative to the link's own dir
+			await ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath);
 			await symlink(x.linkname, dest);
 		} else {
+			// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
+			await preventWritingThroughSymlink(dest, realOutputPath);
 			await writeFile(dest, x.data, {mode});
-		}
-
-		if (x.type === 'file') {
 			await utimes(dest, now, x.mtime);
 		}
 

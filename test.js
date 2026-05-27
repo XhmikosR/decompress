@@ -86,6 +86,19 @@ test.serial('extract file to directory', async t => {
 	t.is(await fs.realpath(path.join(__dirname, 'symlink')), path.join(__dirname, 'file.txt'));
 });
 
+(isWindows ? test.skip : test.serial)('allows a symlink whose target does not exist yet inside the output', async t => {
+	await decompress(path.join(__dirname, 'fixtures', 'dangling_symlink.tar.gz'), 'dist');
+	t.is(await fs.readlink(path.join(__dirname, 'dist', 'link')), 'missing');
+});
+
+(isWindows ? test.serial : test.skip)('emulates a symlink as a hardlink to an in-output target on Windows', async t => {
+	const dist = path.join(__dirname, 'dist');
+	await fs.mkdir(dist, {recursive: true});
+	await fs.writeFile(path.join(dist, 'target.txt'), 'data');
+	await decompress(path.join(__dirname, 'fixtures', 'symlink_to_target.tar.gz'), 'dist');
+	t.is(await fs.readFile(path.join(dist, 'link'), 'utf8'), 'data');
+});
+
 test.serial('extract directory', async t => {
 	await decompress(path.join(__dirname, 'fixtures', 'directory.tar'), __dirname);
 	t.true(await pathExists(path.join(__dirname, 'directory')));
@@ -212,6 +225,67 @@ test.serial('allows files and directories whose names begin with dots', async t 
 	const result = files.map(f => f.path).toSorted();
 	t.deepEqual(result, ['..foo/', '..foo/inside.txt'].toSorted());
 	t.true(await pathExists(path.join(__dirname, 'dist', '..foo', 'inside.txt')));
+});
+
+test.serial('throw when a hardlink target points outside the output directory', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'link_escape.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('throw when a hardlink target resolves through an in-output symlink that escapes', async t => {
+	// A linkname that looks in-bounds can still escape if a symlink was planted
+	// at that path first, so plant one and check the guard resolves the real target
+	const secret = path.join(__dirname, 'secret.txt');
+	const dist = path.join(__dirname, 'dist');
+	await fs.writeFile(secret, 'SECRET');
+	await fs.mkdir(dist, {recursive: true});
+	await fs.symlink(secret, path.join(dist, 'trap'));
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'link_via_trap.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+test.serial('throw when a symlink target points outside the output directory', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'symlink_escape.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('throw when a contiguous-file entry would write through a symlink', async t => {
+	// `contiguous-file` is a regular-file payload that isn't the `file` type the
+	// guard used to key on, so an escaping symlink at its path would slip through
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	await fs.mkdir(path.join(__dirname, 'dist'), {recursive: true});
+	await fs.symlink(secret, path.join(__dirname, 'dist', 'pwned'));
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'contiguous_file.tar'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
 });
 
 test.serial('allows top-level file', async t => {
