@@ -116,9 +116,12 @@ const extractFile = async (input, output, options) => {
 		files = files.map(options.map);
 	}
 
-	if (!output) {
+	if (!output || files.length === 0) {
 		return files;
 	}
+
+	await mkdir(output, {recursive: true});
+	const realOutputPath = await realpath(output);
 
 	return Promise.all(files.map(async x => {
 		const dest = path.join(output, x.path);
@@ -127,15 +130,10 @@ const extractFile = async (input, output, options) => {
 		const now = new Date();
 
 		if (x.type === 'directory') {
-			await mkdir(output, {recursive: true});
-			const realOutputPath = await realpath(output);
 			await safeMakeDir(dest, realOutputPath);
 			await utimes(dest, now, x.mtime);
 			return x;
 		}
-
-		await mkdir(output, {recursive: true});
-		const realOutputPath = await realpath(output);
 
 		// Attempt to ensure parent directory exists (failing if it's outside the output dir)
 		await safeMakeDir(path.dirname(dest), realOutputPath);
