@@ -88,7 +88,7 @@ decompress('unicorn.zip', 'dist', {
 ##### plugins
 
 * Type: `Array`
-* Default: `[decompressTar(), decompressTarbz2(), decompressTargz(), decompressUnzip()]`
+* Default: `[decompressPkg(), decompressTar(), decompressTarbz2(), decompressTargz(), decompressUnzip()]`
 
 Array of [plugins](https://www.npmjs.com/browse/keyword/decompressplugin) to use.
 

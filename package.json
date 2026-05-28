@@ -39,6 +39,7 @@
 		"bzip2",
 		"decompress",
 		"extract",
+		"pkg",
 		"tar",
 		"tar.bz",
 		"tar.gz",
@@ -46,6 +47,7 @@
 		"unzip"
 	],
 	"dependencies": {
+		"@xhmikosr/decompress-pkg": "github:XhmikosR/decompress-pkg#xmr/dev",
 		"@xhmikosr/decompress-tar": "^9.0.1",
 		"@xhmikosr/decompress-tarbz2": "^9.0.1",
 		"@xhmikosr/decompress-targz": "^9.0.1",

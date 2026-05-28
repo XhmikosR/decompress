@@ -2,6 +2,7 @@ import {Buffer} from 'node:buffer';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
+import decompressPkg from '@xhmikosr/decompress-pkg';
 import decompressTar from '@xhmikosr/decompress-tar';
 import decompressTarbz2 from '@xhmikosr/decompress-tarbz2';
 import decompressTargz from '@xhmikosr/decompress-targz';
@@ -204,6 +205,7 @@ const decompress = async (input, output, options) => {
 
 	options = {
 		plugins: [
+			decompressPkg(),
 			decompressTar(),
 			decompressTarbz2(),
 			decompressTargz(),
