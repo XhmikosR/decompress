@@ -123,7 +123,8 @@ const extractFile = async (input, output, options) => {
 	await mkdir(output, {recursive: true});
 	const realOutputPath = await realpath(output);
 
-	return Promise.all(files.map(async x => {
+	// Wait for every entry to settle before propagating any failure
+	const results = await Promise.allSettled(files.map(async x => {
 		const dest = path.join(output, x.path);
 		// Never honor setuid/setgid/sticky bits from an archive
 		const mode = (x.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise
@@ -132,7 +133,7 @@ const extractFile = async (input, output, options) => {
 		if (x.type === 'directory') {
 			await safeMakeDir(dest, realOutputPath);
 			await utimes(dest, now, x.mtime);
-			return x;
+			return;
 		}
 
 		// Attempt to ensure parent directory exists (failing if it's outside the output dir)
@@ -161,9 +162,15 @@ const extractFile = async (input, output, options) => {
 			await writeFile(dest, x.data, {mode});
 			await utimes(dest, now, x.mtime);
 		}
-
-		return x;
 	}));
+
+	// Report the first failure in entry order, not whichever rejected first
+	const failure = results.find(result => result.status === 'rejected');
+	if (failure) {
+		throw failure.reason;
+	}
+
+	return files;
 };
 
 const decompress = async (input, output, options) => {
