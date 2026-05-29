@@ -123,12 +123,12 @@ const extractFile = async (input, output, options) => {
 	await mkdir(output, {recursive: true});
 	const realOutputPath = await realpath(output);
 
+	const umask = process.umask();
+	const now = new Date();
+
 	// Wait for every entry to settle before propagating any failure
 	const results = await Promise.allSettled(entries.map(async entry => {
 		const dest = path.join(output, entry.path);
-		// Never honor setuid/setgid/sticky bits from an archive
-		const mode = (entry.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise
-		const now = new Date();
 
 		if (entry.type === 'directory') {
 			await safeMakeDir(dest, realOutputPath);
@@ -159,6 +159,8 @@ const extractFile = async (input, output, options) => {
 		} else {
 			// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
 			await preventWritingThroughSymlink(dest, realOutputPath);
+			// Never honor setuid/setgid/sticky bits from an archive
+			const mode = (entry.mode & 0o777) & ~umask; // eslint-disable-line no-bitwise
 			await writeFile(dest, entry.data, {mode});
 			await utimes(dest, now, entry.mtime);
 		}
