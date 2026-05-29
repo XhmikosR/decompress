@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import test from 'ava';
+import decompressTar from '@xhmikosr/decompress-tar';
+import decompressUnzip from '@xhmikosr/decompress-unzip';
 import {fileTypeFromBuffer} from 'file-type';
 import decompress from './index.js';
 
@@ -167,6 +169,22 @@ test.serial('set mtime', async t => {
 test('return empty array if no plugins are set', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), {plugins: []});
 	t.is(files.length, 0);
+});
+
+test('combine entries across plugins, skipping non-matching ones', async t => {
+	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), {
+		plugins: [decompressTar(), decompressUnzip()],
+	});
+
+	t.deepEqual(files.map(f => f.path), ['test.jpg']);
+});
+
+test('combine entries from a single plugin', async t => {
+	const files = await decompress(path.join(__dirname, 'fixtures', 'file.tar'), {
+		plugins: [decompressTar()],
+	});
+
+	t.deepEqual(files.map(f => f.path), ['test.jpg']);
 });
 
 test.serial('throw when a location outside the root is given', async t => {

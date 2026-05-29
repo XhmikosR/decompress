@@ -25,8 +25,7 @@ const runPlugins = async (input, options) => {
 
 	const entryGroups = await Promise.all(options.plugins.map(plugin => plugin(input, options)));
 
-	// eslint-disable-next-line unicorn/no-array-reduce
-	return entryGroups.reduce((a, b) => [...a, ...b]);
+	return entryGroups.flat();
 };
 
 const isInsideOutput = (target, root) => {
