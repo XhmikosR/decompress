@@ -18,6 +18,8 @@ const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
 const writeFile = promisify(fs.writeFile);
 
+const IS_WINDOWS = process.platform === 'win32';
+
 const runPlugins = async (input, options) => {
 	if (options.plugins.length === 0) {
 		return [];
@@ -125,8 +127,7 @@ const extractFile = async (input, output, options) => {
 	const umask = process.umask();
 	const now = new Date();
 
-	// Wait for every entry to settle before propagating any failure
-	const results = await Promise.allSettled(entries.map(async entry => {
+	const extractEntry = async entry => {
 		const dest = path.join(output, entry.path);
 
 		if (entry.type === 'directory') {
@@ -147,7 +148,7 @@ const extractFile = async (input, output, options) => {
 			// Hardlink target is relative to the extraction root
 			const target = await ensureLinkTargetInsideOutput(entry.linkname, realOutputPath, realOutputPath);
 			await link(target, dest);
-		} else if (entry.type === 'symlink' && process.platform === 'win32') {
+		} else if (entry.type === 'symlink' && IS_WINDOWS) {
 			// No symlinks on Windows; emulate with a hardlink relative to the link's dir
 			const target = await ensureLinkTargetInsideOutput(entry.linkname, path.dirname(dest), realOutputPath);
 			await link(target, dest);
@@ -163,7 +164,24 @@ const extractFile = async (input, output, options) => {
 			await writeFile(dest, entry.data, {mode});
 			await utimes(dest, now, entry.mtime);
 		}
-	}));
+	};
+
+	// Hardlinks need their target written first, so extract everything else before linking
+	const isHardlink = entry => entry.type === 'link' || (entry.type === 'symlink' && IS_WINDOWS);
+
+	const results = Array.from({length: entries.length});
+	const settle = async i => {
+		try {
+			await extractEntry(entries[i]);
+			results[i] = {status: 'fulfilled'};
+		} catch (error) {
+			results[i] = {status: 'rejected', reason: error};
+		}
+	};
+
+	const order = [...entries.keys()];
+	await Promise.all(order.filter(i => !isHardlink(entries[i])).map(i => settle(i)));
+	await Promise.all(order.filter(i => isHardlink(entries[i])).map(i => settle(i)));
 
 	// Report the first failure in entry order, not whichever rejected first
 	const failure = results.find(result => result.status === 'rejected');
