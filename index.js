@@ -28,18 +28,45 @@ const runPlugins = (input, options) => {
 		.then(files => files.reduce((a, b) => [...a, ...b]));
 };
 
+const isInsideOutput = (target, root) => {
+	const rel = path.relative(root, target);
+	// '' is the dir itself; a `..` or an absolute path (different drive on Windows) is outside it
+	return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+};
+
 const safeMakeDir = (dir, realOutputPath) => realpath(dir)
 	.catch(_ => {
 		const parent = path.dirname(dir);
 		return safeMakeDir(parent, realOutputPath);
 	})
 	.then(realParentPath => {
-		if (realParentPath.indexOf(realOutputPath) !== 0) {
+		if (!isInsideOutput(realParentPath, realOutputPath)) {
 			throw new Error('Refusing to create a directory outside the output path.');
 		}
 
 		return mkdir(dir, {recursive: true}).then(() => realpath(dir));
 	});
+
+const ensureLinkTargetInsideOutput = (linkname, linkBase, realOutputPath) => {
+	const target = path.resolve(linkBase, linkname);
+
+	if (!isInsideOutput(target, realOutputPath)) {
+		return Promise.reject(new Error(`Refusing to create a link pointing outside the output directory: ${target}`));
+	}
+
+	// An existing target may itself be a symlink that escapes, so check its real path
+	return realpath(target).then(
+		realTarget => {
+			if (!isInsideOutput(realTarget, realOutputPath)) {
+				throw new Error(`Refusing to create a link pointing outside the output directory: ${realTarget}`);
+			}
+
+			return target;
+		},
+		// Dangling target; the path check above covers it
+		_ => target,
+	);
+};
 
 const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
 	// Either no file exists, or it's not a symlink. In either case, this is
@@ -80,7 +107,8 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 
 	return Promise.all(files.map(x => {
 		const dest = path.join(output, x.path);
-		const mode = x.mode & ~process.umask(); // eslint-disable-line no-bitwise
+		// Never honor setuid/setgid/sticky bits from an archive
+		const mode = (x.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise
 		const now = new Date();
 
 		if (x.type === 'directory') {
@@ -97,29 +125,36 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
 				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath),
 			)
-			.then(realOutputPath => x.type === 'file'
-				? preventWritingThroughSymlink(dest, realOutputPath)
-				: realOutputPath)
 			.then(realOutputPath => realpath(path.dirname(dest))
 				.then(realDestinationDir => {
-					if (realDestinationDir.indexOf(realOutputPath) !== 0) {
+					if (!isInsideOutput(realDestinationDir, realOutputPath)) {
 						throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
 					}
+
+					return realOutputPath;
 				}))
-			.then(() => {
+			.then(realOutputPath => {
 				if (x.type === 'link') {
-					return link(x.linkname, dest);
+					// Hardlink target is relative to the extraction root
+					return ensureLinkTargetInsideOutput(x.linkname, realOutputPath, realOutputPath)
+						.then(target => link(target, dest));
 				}
 
 				if (x.type === 'symlink' && process.platform === 'win32') {
-					return link(x.linkname, dest);
+					// No symlinks on Windows; emulate with a hardlink relative to the link's dir
+					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
+						.then(target => link(target, dest));
 				}
 
 				if (x.type === 'symlink') {
-					return symlink(x.linkname, dest);
+					// Target is relative to the link's own dir
+					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
+						.then(() => symlink(x.linkname, dest));
 				}
 
-				return writeFile(dest, x.data, {mode});
+				// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
+				return preventWritingThroughSymlink(dest, realOutputPath)
+					.then(() => writeFile(dest, x.data, {mode}));
 			})
 			.then(() => x.type === 'file' && utimes(dest, now, x.mtime))
 			.then(() => x);

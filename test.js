@@ -1,3 +1,4 @@
+import {Buffer} from 'node:buffer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -163,4 +164,111 @@ test.serial('allows top-level file', async t => {
 	await t.throwsAsync(async () => {
 		await decompress(path.join(__dirname, 'fixtures', 'slip3.zip'), '/tmp/dist');
 	}, {message: /Refusing/});
+});
+
+test.serial('throw when a hardlink target points outside the output directory', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'link_escape.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+test.serial('throw when a symlink target points outside the output directory', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'symlink_escape.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('throw when a hardlink target resolves through an in-output symlink that escapes', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	const dist = path.join(__dirname, 'dist');
+	await fs.writeFile(secret, 'SECRET');
+	await fs.mkdir(dist, {recursive: true});
+	await fs.symlink(secret, path.join(dist, 'trap'));
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'link_via_trap.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('throw when a contiguous-file entry would write through a symlink', async t => {
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	await fs.mkdir(path.join(__dirname, 'dist'), {recursive: true});
+	await fs.symlink(secret, path.join(__dirname, 'dist', 'pwned'));
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'contiguous_file.tar'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('throw when a symlink resolves to a sibling directory that shares the output prefix', async t => {
+	const siblingDir = path.join(__dirname, 'dist-sibling');
+	await fs.mkdir(siblingDir, {recursive: true});
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'sibling_prefix.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+	} finally {
+		await fs.rm(siblingDir, {force: true, recursive: true});
+	}
+});
+
+(isWindows ? test.skip : test.serial)('strips setuid/setgid bits from extracted files', async t => {
+	// A plugin is the simplest way to feed an entry with the special bits set;
+	// a crafted archive's mode reaches the writer the same way.
+	const setuidPlugin = () => [{
+		type: 'file',
+		path: 'evil',
+		mode: 0o4755,
+		mtime: new Date(),
+		data: Buffer.from('x'),
+	}];
+
+	await decompress(Buffer.from(''), 'dist', {plugins: [setuidPlugin]});
+
+	const {mode} = await fs.stat(path.join(__dirname, 'dist', 'evil'));
+	t.is(mode & 0o7000, 0); // eslint-disable-line no-bitwise
+	t.is(mode & 0o100, 0o100); // eslint-disable-line no-bitwise
+});
+
+test.serial('allows files and directories whose names begin with dots', async t => {
+	const files = await decompress(path.join(__dirname, 'fixtures', 'leading_dots.tar.gz'), 'dist');
+	t.is(files.length, 2);
+	t.deepEqual(files.map(f => f.path).sort(), ['..foo/', '..foo/inside.txt'].sort());
+	t.true(await pathExists(path.join(__dirname, 'dist', '..foo', 'inside.txt')));
+});
+
+(isWindows ? test.skip : test.serial)('allows a symlink whose target does not exist yet inside the output', async t => {
+	await decompress(path.join(__dirname, 'fixtures', 'dangling_symlink.tar.gz'), 'dist');
+	t.is(await fs.readlink(path.join(__dirname, 'dist', 'link')), 'missing');
+});
+
+(isWindows ? test.serial : test.skip)('emulates a symlink as a hardlink to an in-output target on Windows', async t => {
+	const dist = path.join(__dirname, 'dist');
+	await fs.mkdir(dist, {recursive: true});
+	await fs.writeFile(path.join(dist, 'target.txt'), 'data');
+	await decompress(path.join(__dirname, 'fixtures', 'symlink_to_target.tar.gz'), 'dist');
+	t.is(await fs.readFile(path.join(dist, 'link'), 'utf8'), 'data');
 });
