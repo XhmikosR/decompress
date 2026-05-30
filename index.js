@@ -122,7 +122,8 @@ const extractFile = async (input, output, options) => {
 
 	return Promise.all(files.map(async x => {
 		const dest = path.join(output, x.path);
-		const mode = x.mode & ~process.umask(); // eslint-disable-line no-bitwise
+		// Never honor setuid/setgid/sticky bits from an archive
+		const mode = (x.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise
 		const now = new Date();
 
 		if (x.type === 'directory') {

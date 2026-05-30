@@ -1,3 +1,4 @@
+import {Buffer} from 'node:buffer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -286,6 +287,22 @@ test.serial('throw when a symlink target points outside the output directory', a
 	} finally {
 		await fs.rm(secret, {force: true});
 	}
+});
+
+(isWindows ? test.skip : test.serial)('strips setuid/setgid bits from extracted files', async t => {
+	const setuidPlugin = () => [{
+		type: 'file',
+		path: 'evil',
+		mode: 0o4755,
+		mtime: new Date(),
+		data: Buffer.from('x'),
+	}];
+
+	await decompress(Buffer.from(''), 'dist', {plugins: [setuidPlugin]});
+
+	const {mode} = await fs.stat(path.join(__dirname, 'dist', 'evil'));
+	t.is(mode & 0o7000, 0); // eslint-disable-line no-bitwise
+	t.is(mode & 0o100, 0o100); // eslint-disable-line no-bitwise
 });
 
 test.serial('allows top-level file', async t => {
