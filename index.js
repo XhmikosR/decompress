@@ -95,6 +95,9 @@ const preventWritingThroughSymlink = async (destination, realOutputPath) => {
 	return realOutputPath;
 };
 
+// Hardlinks need their target written first, so extract everything else before linking
+const isHardlink = entry => entry.type === 'link' || (entry.type === 'symlink' && IS_WINDOWS);
+
 const extractFile = async (input, output, options) => {
 	let entries = await runPlugins(input, options);
 
@@ -165,9 +168,6 @@ const extractFile = async (input, output, options) => {
 			await utimes(dest, now, entry.mtime);
 		}
 	};
-
-	// Hardlinks need their target written first, so extract everything else before linking
-	const isHardlink = entry => entry.type === 'link' || (entry.type === 'symlink' && IS_WINDOWS);
 
 	const results = Array.from({length: entries.length});
 	const settle = async i => {
