@@ -185,6 +185,17 @@ const extractFile = async (input, output, options) => {
 		return entries;
 	}
 
+	// Two entries at one path let a symlink and a write race the same destination
+	const seenPaths = new Set();
+	for (const entry of entries) {
+		const key = IS_WINDOWS ? entry.path.toLowerCase() : entry.path;
+		if (seenPaths.has(key)) {
+			throw new Error(`Refusing to extract an archive with a duplicate entry path: ${entry.path}`);
+		}
+
+		seenPaths.add(key);
+	}
+
 	await mkdir(output, {recursive: true});
 	const realOutputPath = await realpath(output);
 

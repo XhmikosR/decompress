@@ -376,6 +376,18 @@ test.serial('allows top-level file', async t => {
 	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [hardlinkToSymlink]}), {message: /Refusing to hardlink to a symlink/});
 });
 
+test.serial('throw on duplicate entry paths', async t => {
+	const duplicate = () => [
+		{
+			type: 'file', path: 'dup', mode: 0o644, mtime: new Date(), data: Buffer.from('a'),
+		},
+		{
+			type: 'file', path: 'dup', mode: 0o644, mtime: new Date(), data: Buffer.from('b'),
+		},
+	];
+	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [duplicate]}), {message: /duplicate entry path/});
+});
+
 // Pass isWindows explicitly so these run on every OS, not just Windows
 test('assertSafeEntryPath rejects NUL bytes on every platform', t => {
 	for (const name of ['a\u0000b', 'dir1/dir2/a\u0000b', 'a\u0000b/c.txt']) {
