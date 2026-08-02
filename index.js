@@ -18,6 +18,42 @@ const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
 const writeFile = promisify(fs.writeFile);
 
+const IS_WINDOWS = process.platform === 'win32';
+// Names Windows treats as device files, with or without an extension (`NUL.txt` is still `NUL`)
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+const isUnsafeWindowsSegment = segment => {
+	// `.`/`..`/empty segments are handled by the traversal checks, not here
+	if (segment === '' || segment === '.' || segment === '..') {
+		return false;
+	}
+
+	// `:` opens an NTFS alternate data stream; the rest are invalid Windows filename chars
+	if (/[<>:"|?*]/.test(segment) || [...segment].some(character => character.codePointAt(0) < 0x20)) {
+		return true;
+	}
+
+	return WINDOWS_RESERVED_NAME.test(segment);
+};
+
+export const assertSafeEntryPath = (entryPath, isWindows = IS_WINDOWS) => {
+	// fs rejects NUL too, but not before mkdir has created parent directories
+	if (entryPath.includes('\0')) {
+		throw new Error(`Refusing to extract a path containing a NUL byte: ${entryPath}`);
+	}
+
+	// Alternate data streams, reserved device names and forbidden characters are
+	// all legal on POSIX, so reject them on Windows only
+	if (!isWindows) {
+		return;
+	}
+
+	const unsafe = entryPath.split(/[/\\]/).find(segment => isUnsafeWindowsSegment(segment));
+	if (unsafe !== undefined) {
+		throw new Error(`Refusing to extract a path that is unsafe on Windows: ${entryPath}`);
+	}
+};
+
 const runPlugins = (input, options) => {
 	if (options.plugins.length === 0) {
 		return Promise.resolve([]);
@@ -106,6 +142,7 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 	}
 
 	return Promise.all(files.map(x => {
+		assertSafeEntryPath(x.path);
 		const dest = path.join(output, x.path);
 		// Never honor setuid/setgid/sticky bits from an archive
 		const mode = (x.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise

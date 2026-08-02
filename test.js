@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import isJpg from 'is-jpg';
 import {pathExists} from 'path-exists';
 import test from 'ava';
-import decompress from './index.js';
+import decompress, {assertSafeEntryPath} from './index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';
@@ -271,4 +271,50 @@ test.serial('allows files and directories whose names begin with dots', async t 
 	await fs.writeFile(path.join(dist, 'target.txt'), 'data');
 	await decompress(path.join(__dirname, 'fixtures', 'symlink_to_target.tar.gz'), 'dist');
 	t.is(await fs.readFile(path.join(dist, 'link'), 'utf8'), 'data');
+});
+
+// Pass isWindows explicitly so these run on every OS, not just Windows
+test('assertSafeEntryPath rejects NUL bytes on every platform', t => {
+	for (const name of ['a\u0000b', 'dir1/dir2/a\u0000b', 'a\u0000b/c.txt']) {
+		t.throws(() => assertSafeEntryPath(name, true), {message: /NUL byte/});
+		t.throws(() => assertSafeEntryPath(name, false), {message: /NUL byte/});
+	}
+});
+
+test('assertSafeEntryPath skips the Windows rules off Windows', t => {
+	t.notThrows(() => assertSafeEntryPath('app.exe:evil', false));
+	t.notThrows(() => assertSafeEntryPath('CON', false));
+});
+
+test('assertSafeEntryPath rejects alternate data streams on Windows', t => {
+	t.throws(() => assertSafeEntryPath('app.exe:evil', true), {message: /unsafe on Windows/});
+});
+
+test('assertSafeEntryPath rejects reserved device names on Windows', t => {
+	for (const name of ['CON', 'nul', 'com1', 'LPT9', 'NUL.txt', 'aux']) {
+		t.throws(() => assertSafeEntryPath(`dir/${name}`, true), {message: /unsafe on Windows/});
+	}
+});
+
+test('assertSafeEntryPath rejects other forbidden characters on Windows', t => {
+	for (const name of ['a<b', 'a>b', 'a"b', 'a|b', 'a?b', 'a*b']) {
+		t.throws(() => assertSafeEntryPath(name, true), {message: /unsafe on Windows/});
+	}
+});
+
+test('assertSafeEntryPath rejects control characters on Windows', t => {
+	for (const character of ['\u0001', '\u001F']) {
+		const name = `a${character}b`;
+		t.throws(() => assertSafeEntryPath(name, true), {message: /unsafe on Windows/});
+	}
+});
+
+test('assertSafeEntryPath allows ordinary names and defers dot segments to traversal checks', t => {
+	t.notThrows(() => assertSafeEntryPath('dist/my file.txt', true));
+	t.notThrows(() => assertSafeEntryPath('console.txt', true));
+	t.notThrows(() => assertSafeEntryPath('null.js', true));
+	t.notThrows(() => assertSafeEntryPath('trailing_dots..', true));
+	t.notThrows(() => assertSafeEntryPath('trailing_space ', true));
+	t.notThrows(() => assertSafeEntryPath('./a/../b', true));
+	t.notThrows(() => assertSafeEntryPath('a//b', true));
 });
