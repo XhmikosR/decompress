@@ -1,6 +1,12 @@
 import {Buffer} from 'node:buffer';
+import {constants as fsConstants} from 'node:fs';
 // realpath follows symlinks, so a target that escapes via a symlink is caught
-import {lstat, realpath, unlink} from 'node:fs/promises';
+import {
+	lstat,
+	open as openFile,
+	realpath,
+	unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -16,10 +22,8 @@ const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
 // Node 18 fs.promises.realpath rejects Windows trailing-dot dir names; the callback realpath does not
 const realpathDir = promisify(fs.realpath);
-const readlink = promisify(fs.readlink);
 const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
-const writeFile = promisify(fs.writeFile);
 
 const IS_WINDOWS = process.platform === 'win32';
 // Names Windows treats as device files, with or without an extension (`NUL.txt` is still `NUL`)
@@ -115,19 +119,6 @@ const assertNotSymlink = async target => {
 		throw new Error(`Refusing to hardlink to a symlink: ${target}`);
 	}
 };
-
-const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
-	// Either no file exists, or it's not a symlink. In either case, this is
-	// not an escape we need to worry about in this phase.
-	.catch(_ => null)
-	.then(symlinkPointsTo => {
-		if (symlinkPointsTo) {
-			throw new Error('Refusing to write into a symlink');
-		}
-
-		// No symlink exists at `destination`, so we can continue
-		return realOutputPath;
-	});
 
 // realpath the longest existing prefix (follows sibling symlinks), then append the missing tail
 const resolveMaybeMissing = async target => {
@@ -225,12 +216,21 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 						.then(() => symlink(x.linkname, dest));
 				}
 
-				// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
 				// Never honor setuid/setgid/sticky bits from an archive
 				const mode = (x.mode & 0o777) & ~umask; // eslint-disable-line no-bitwise
-				return preventWritingThroughSymlink(dest, realOutputPath)
-					.then(() => writeFile(dest, x.data, {mode}))
-					.then(() => utimes(dest, now, x.mtime));
+				// O_NOFOLLOW so a symlink planted at dest can't redirect the write
+				const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW || 0); // eslint-disable-line no-bitwise
+				return openFile(dest, flags, mode)
+					.catch(error => {
+						if (error.code === 'ELOOP') {
+							throw new Error('Refusing to write into a symlink');
+						}
+
+						throw error;
+					})
+					.then(handle => handle.writeFile(x.data)
+						.then(() => handle.utimes(now, x.mtime))
+						.finally(() => handle.close()));
 			});
 	};
 
