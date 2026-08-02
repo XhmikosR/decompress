@@ -350,3 +350,15 @@ test('assertSafeEntryPath allows ordinary names and defers dot segments to trave
 	];
 	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [hardlinkToSymlink]}), {message: /Refusing to hardlink to a symlink/});
 });
+
+test.serial('throw on duplicate entry paths', async t => {
+	const duplicate = () => [
+		{
+			type: 'file', path: 'dup', mode: 0o644, mtime: new Date(), data: Buffer.from('a'),
+		},
+		{
+			type: 'file', path: 'dup', mode: 0o644, mtime: new Date(), data: Buffer.from('b'),
+		},
+	];
+	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [duplicate]}), {message: /duplicate entry path/});
+});

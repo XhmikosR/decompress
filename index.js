@@ -177,6 +177,17 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 		return files;
 	}
 
+	// Two entries at one path let a symlink and a write race the same destination
+	const seenPaths = new Set();
+	for (const x of files) {
+		const key = IS_WINDOWS ? x.path.toLowerCase() : x.path;
+		if (seenPaths.has(key)) {
+			throw new Error(`Refusing to extract an archive with a duplicate entry path: ${x.path}`);
+		}
+
+		seenPaths.add(key);
+	}
+
 	await mkdir(output, {recursive: true});
 	const realOutputPath = await realpathDir(output);
 	const umask = process.umask();
