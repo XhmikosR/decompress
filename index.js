@@ -1,4 +1,6 @@
 import {Buffer} from 'node:buffer';
+// realpath follows symlinks, so a target that escapes via a symlink is caught
+import {realpath} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -13,7 +15,6 @@ const link = promisify(fs.link);
 const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
 const readlink = promisify(fs.readlink);
-const realpath = promisify(fs.realpath);
 const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
 const writeFile = promisify(fs.writeFile);
