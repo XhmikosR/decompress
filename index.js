@@ -1,6 +1,6 @@
 import {Buffer} from 'node:buffer';
 // realpath follows symlinks, so a target that escapes via a symlink is caught
-import {realpath} from 'node:fs/promises';
+import {realpath, unlink} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -130,7 +130,41 @@ const preventWritingThroughSymlink = async (destination, realOutputPath) => {
 	return realOutputPath;
 };
 
-// Hardlinks need their target written first, so extract everything else before linking
+// realpath the longest existing prefix (follows sibling symlinks), then append the missing tail
+const resolveMaybeMissing = async target => {
+	let existing = target;
+	const tail = [];
+
+	for (;;) {
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			return path.join(await realpath(existing), ...tail.toReversed());
+		} catch {
+			const parent = path.dirname(existing);
+			if (parent === existing) {
+				return target;
+			}
+
+			tail.push(path.basename(existing));
+			existing = parent;
+		}
+	}
+};
+
+// A self-referential linkname resolves inside lexically but escapes via the kernel
+const assertSymlinkResolvesInside = async (dest, linkname, realOutputPath) => {
+	// Keep the raw linkname so its symlink components aren't collapsed
+	const rawTarget = path.isAbsolute(linkname) ? linkname : path.dirname(dest) + path.sep + linkname;
+	const resolved = await resolveMaybeMissing(rawTarget);
+
+	if (!isInsideOutput(resolved, realOutputPath)) {
+		await unlink(dest).catch(() => null);
+		throw new Error(`Refusing to keep a symlink that escapes the output directory: ${dest}`);
+	}
+};
+
+// Files, then symlinks, then hardlinks: a hardlink may target a symlink
+const isSymlink = entry => entry.type === 'symlink' && !IS_WINDOWS;
 const isHardlink = entry => entry.type === 'link' || (entry.type === 'symlink' && IS_WINDOWS);
 
 const extractFile = async (input, output, options) => {
@@ -189,12 +223,12 @@ const extractFile = async (input, output, options) => {
 			const target = await ensureLinkTargetInsideOutput(entry.linkname, realOutputPath, realOutputPath);
 			await link(target, dest);
 		} else if (entry.type === 'symlink' && IS_WINDOWS) {
-			// No symlinks on Windows; emulate with a hardlink relative to the link's dir
-			const target = await ensureLinkTargetInsideOutput(entry.linkname, path.dirname(dest), realOutputPath);
+			// No symlinks on Windows; emulate with a hardlink relative to the link's real dir
+			const target = await ensureLinkTargetInsideOutput(entry.linkname, realDestinationDir, realOutputPath);
 			await link(target, dest);
 		} else if (entry.type === 'symlink') {
-			// Target is relative to the link's own dir
-			await ensureLinkTargetInsideOutput(entry.linkname, path.dirname(dest), realOutputPath);
+			// Lexical fast-reject; assertSymlinkResolvesInside is the real guard
+			await ensureLinkTargetInsideOutput(entry.linkname, realDestinationDir, realOutputPath);
 			await symlink(entry.linkname, dest);
 		} else {
 			// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
@@ -207,9 +241,9 @@ const extractFile = async (input, output, options) => {
 	};
 
 	const results = Array.from({length: entries.length});
-	const settle = async i => {
+	const settle = async (i, task) => {
 		try {
-			await extractEntry(entries[i]);
+			await task(entries[i]);
 			results[i] = {status: 'fulfilled'};
 		} catch (error) {
 			results[i] = {status: 'rejected', reason: error};
@@ -217,8 +251,15 @@ const extractFile = async (input, output, options) => {
 	};
 
 	const order = [...entries.keys()];
-	await Promise.all(order.filter(i => !isHardlink(entries[i])).map(i => settle(i)));
-	await Promise.all(order.filter(i => isHardlink(entries[i])).map(i => settle(i)));
+	const symlinkOrder = order.filter(i => isSymlink(entries[i]));
+	await Promise.all(order.filter(i => !isSymlink(entries[i]) && !isHardlink(entries[i])).map(i => settle(i, extractEntry)));
+	await Promise.all(symlinkOrder.map(i => settle(i, extractEntry)));
+	await Promise.all(order.filter(i => isHardlink(entries[i])).map(i => settle(i, extractEntry)));
+
+	// Now every symlink exists, resolve chains for real
+	await Promise.all(symlinkOrder
+		.filter(i => results[i].status === 'fulfilled')
+		.map(i => settle(i, entry => assertSymlinkResolvesInside(path.join(output, entry.path), entry.linkname, realOutputPath))));
 
 	// Report the first failure in entry order, not whichever rejected first
 	const failure = results.find(result => result.status === 'rejected');
