@@ -1,6 +1,6 @@
 import {Buffer} from 'node:buffer';
 // realpath follows symlinks, so a target that escapes via a symlink is caught
-import {realpath} from 'node:fs/promises';
+import {realpath, unlink} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -120,7 +120,40 @@ const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(d
 		return realOutputPath;
 	});
 
-const extractFile = (input, output, options) => runPlugins(input, options).then(files => {
+// realpath the longest existing prefix (follows sibling symlinks), then append the missing tail
+const resolveMaybeMissing = async target => {
+	let existing = target;
+	const tail = [];
+
+	for (;;) {
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			return path.join(await realpath(existing), ...tail);
+		} catch {
+			const parent = path.dirname(existing);
+			if (parent === existing) {
+				return target;
+			}
+
+			tail.unshift(path.basename(existing));
+			existing = parent;
+		}
+	}
+};
+
+// A self-referential linkname resolves inside lexically but escapes via the kernel
+const assertSymlinkResolvesInside = async (dest, linkname, realOutputPath) => {
+	// Keep the raw linkname so its symlink components aren't collapsed
+	const rawTarget = path.isAbsolute(linkname) ? linkname : path.dirname(dest) + path.sep + linkname;
+	const resolved = await resolveMaybeMissing(rawTarget);
+
+	if (!isInsideOutput(resolved, realOutputPath)) {
+		await unlink(dest).catch(() => null);
+		throw new Error(`Refusing to keep a symlink that escapes the output directory: ${dest}`);
+	}
+};
+
+const extractFile = (input, output, options) => runPlugins(input, options).then(async files => {
 	if (options.strip > 0) {
 		files = files
 			.map(x => {
@@ -144,61 +177,67 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 		return files;
 	}
 
-	return Promise.all(files.map(x => {
+	await mkdir(output, {recursive: true});
+	const realOutputPath = await realpathDir(output);
+	const umask = process.umask();
+	const now = new Date();
+
+	const extractOne = x => {
 		assertSafeEntryPath(x.path);
 		const dest = path.join(output, x.path);
-		// Never honor setuid/setgid/sticky bits from an archive
-		const mode = (x.mode & 0o777) & ~process.umask(); // eslint-disable-line no-bitwise
-		const now = new Date();
 
 		if (x.type === 'directory') {
-			return mkdir(output, {recursive: true})
-				.then(() => realpath(output))
-				.then(realOutputPath => safeMakeDir(dest, realOutputPath))
-				.then(() => utimes(dest, now, x.mtime))
-				.then(() => x);
+			return safeMakeDir(dest, realOutputPath).then(() => utimes(dest, now, x.mtime));
 		}
 
-		return mkdir(output, {recursive: true})
-			.then(() => realpath(output))
-			.then(realOutputPath =>
-				// Attempt to ensure parent directory exists (failing if it's outside the output dir)
-				safeMakeDir(path.dirname(dest), realOutputPath).then(() => realOutputPath),
-			)
-			.then(realOutputPath => realpath(path.dirname(dest))
-				.then(realDestinationDir => {
-					if (!isInsideOutput(realDestinationDir, realOutputPath)) {
-						throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
-					}
+		// Attempt to ensure parent directory exists (failing if it's outside the output dir)
+		return safeMakeDir(path.dirname(dest), realOutputPath)
+			.then(() => realpathDir(path.dirname(dest)))
+			.then(realDestinationDir => {
+				if (!isInsideOutput(realDestinationDir, realOutputPath)) {
+					throw new Error(`Refusing to write outside output directory: ${realDestinationDir}`);
+				}
 
-					return realOutputPath;
-				}))
-			.then(realOutputPath => {
 				if (x.type === 'link') {
 					// Hardlink target is relative to the extraction root
 					return ensureLinkTargetInsideOutput(x.linkname, realOutputPath, realOutputPath)
 						.then(target => link(target, dest));
 				}
 
-				if (x.type === 'symlink' && process.platform === 'win32') {
-					// No symlinks on Windows; emulate with a hardlink relative to the link's dir
-					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
+				if (x.type === 'symlink' && IS_WINDOWS) {
+					// No symlinks on Windows; emulate with a hardlink relative to the link's real dir
+					return ensureLinkTargetInsideOutput(x.linkname, realDestinationDir, realOutputPath)
 						.then(target => link(target, dest));
 				}
 
 				if (x.type === 'symlink') {
-					// Target is relative to the link's own dir
-					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
+					// Lexical fast-reject; assertSymlinkResolvesInside is the real guard
+					return ensureLinkTargetInsideOutput(x.linkname, realDestinationDir, realOutputPath)
 						.then(() => symlink(x.linkname, dest));
 				}
 
 				// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
+				// Never honor setuid/setgid/sticky bits from an archive
+				const mode = (x.mode & 0o777) & ~umask; // eslint-disable-line no-bitwise
 				return preventWritingThroughSymlink(dest, realOutputPath)
-					.then(() => writeFile(dest, x.data, {mode}));
-			})
-			.then(() => x.type === 'file' && utimes(dest, now, x.mtime))
-			.then(() => x);
-	}));
+					.then(() => writeFile(dest, x.data, {mode}))
+					.then(() => utimes(dest, now, x.mtime));
+			});
+	};
+
+	const isSymlinkEntry = x => x.type === 'symlink' && !IS_WINDOWS;
+	const isHardlinkEntry = x => x.type === 'link' || (x.type === 'symlink' && IS_WINDOWS);
+	const symlinks = files.filter(x => isSymlinkEntry(x));
+
+	// Files and dirs first, then symlinks, then hardlinks (which may target a symlink)
+	await Promise.all(files.filter(x => !isSymlinkEntry(x) && !isHardlinkEntry(x)).map(x => extractOne(x)));
+	await Promise.all(symlinks.map(x => extractOne(x)));
+	await Promise.all(files.filter(x => isHardlinkEntry(x)).map(x => extractOne(x)));
+
+	// Every symlink now exists, so self-referential chains can be resolved for real
+	await Promise.all(symlinks.map(x => assertSymlinkResolvesInside(path.join(output, x.path), x.linkname, realOutputPath)));
+
+	return files;
 });
 
 const decompress = (input, output, options) => {

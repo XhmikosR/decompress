@@ -318,3 +318,23 @@ test('assertSafeEntryPath allows ordinary names and defers dot segments to trave
 	t.notThrows(() => assertSafeEntryPath('./a/../b', true));
 	t.notThrows(() => assertSafeEntryPath('a//b', true));
 });
+
+(isWindows ? test.skip : test.serial)('throw when a self-referential symlink chain escapes the output', async t => {
+	// `a -> "."` makes b's linkname resolve inside lexically but escape via the kernel
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	const chain = () => [
+		{
+			type: 'symlink', path: 'a', linkname: '.', mode: 0o777, mtime: new Date(), data: Buffer.alloc(0),
+		},
+		{
+			type: 'symlink', path: 'b', linkname: 'a/../secret.txt', mode: 0o777, mtime: new Date(), data: Buffer.alloc(0),
+		},
+	];
+	try {
+		await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [chain]}), {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
