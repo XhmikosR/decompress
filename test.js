@@ -338,3 +338,15 @@ test('assertSafeEntryPath allows ordinary names and defers dot segments to trave
 		await fs.rm(secret, {force: true});
 	}
 });
+
+(isWindows ? test.skip : test.serial)('throw when a hardlink points at an in-output symlink', async t => {
+	const hardlinkToSymlink = () => [
+		{
+			type: 'symlink', path: 'sub/link', linkname: '../secret.txt', mode: 0o777, mtime: new Date(), data: Buffer.alloc(0),
+		},
+		{
+			type: 'link', path: 'x', linkname: 'sub/link', mode: 0o644, mtime: new Date(), data: Buffer.alloc(0),
+		},
+	];
+	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [hardlinkToSymlink]}), {message: /Refusing to hardlink to a symlink/});
+});

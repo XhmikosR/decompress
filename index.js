@@ -1,6 +1,6 @@
 import {Buffer} from 'node:buffer';
 // realpath follows symlinks, so a target that escapes via a symlink is caught
-import {realpath, unlink} from 'node:fs/promises';
+import {lstat, realpath, unlink} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -107,6 +107,15 @@ const ensureLinkTargetInsideOutput = (linkname, linkBase, realOutputPath) => {
 	);
 };
 
+const assertNotSymlink = async target => {
+	// link() would clone the symlink inode, relocating its relative target outside
+	const stats = await lstat(target).catch(() => null);
+
+	if (stats && stats.isSymbolicLink()) {
+		throw new Error(`Refusing to hardlink to a symlink: ${target}`);
+	}
+};
+
 const preventWritingThroughSymlink = (destination, realOutputPath) => readlink(destination)
 	// Either no file exists, or it's not a symlink. In either case, this is
 	// not an escape we need to worry about in this phase.
@@ -201,13 +210,13 @@ const extractFile = (input, output, options) => runPlugins(input, options).then(
 				if (x.type === 'link') {
 					// Hardlink target is relative to the extraction root
 					return ensureLinkTargetInsideOutput(x.linkname, realOutputPath, realOutputPath)
-						.then(target => link(target, dest));
+						.then(target => assertNotSymlink(target).then(() => link(target, dest)));
 				}
 
 				if (x.type === 'symlink' && IS_WINDOWS) {
 					// No symlinks on Windows; emulate with a hardlink relative to the link's real dir
 					return ensureLinkTargetInsideOutput(x.linkname, realDestinationDir, realOutputPath)
-						.then(target => link(target, dest));
+						.then(target => assertNotSymlink(target).then(() => link(target, dest)));
 				}
 
 				if (x.type === 'symlink') {
