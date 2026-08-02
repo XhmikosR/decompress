@@ -1,6 +1,9 @@
 import {Buffer} from 'node:buffer';
+import {constants as fsConstants} from 'node:fs';
 // realpath follows symlinks, so a target that escapes via a symlink is caught
-import {lstat, realpath, unlink} from 'node:fs/promises';
+import {
+	lstat, open as openFile, realpath, unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -14,10 +17,8 @@ import stripDirs from 'strip-dirs';
 const link = promisify(fs.link);
 const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
-const readlink = promisify(fs.readlink);
 const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
-const writeFile = promisify(fs.writeFile);
 
 const IS_WINDOWS = process.platform === 'win32';
 // Names Windows treats as device files, with or without an extension (`NUL.txt` is still `NUL`)
@@ -119,24 +120,6 @@ const assertNotSymlink = async target => {
 	if (stats && stats.isSymbolicLink()) {
 		throw new Error(`Refusing to hardlink to a symlink: ${target}`);
 	}
-};
-
-const preventWritingThroughSymlink = async (destination, realOutputPath) => {
-	let symlinkPointsTo = null;
-
-	try {
-		symlinkPointsTo = await readlink(destination);
-	} catch {
-		// Either no file exists, or it's not a symlink. In either case, this is
-		// not an escape we need to worry about in this phase.
-	}
-
-	if (symlinkPointsTo) {
-		throw new Error('Refusing to write into a symlink');
-	}
-
-	// No symlink exists at `destination`, so we can continue
-	return realOutputPath;
 };
 
 // realpath the longest existing prefix (follows sibling symlinks), then append the missing tail
@@ -242,12 +225,23 @@ const extractFile = async (input, output, options) => {
 			await ensureLinkTargetInsideOutput(entry.linkname, realDestinationDir, realOutputPath);
 			await symlink(entry.linkname, dest);
 		} else {
-			// Guard the write itself, not just `file`, so flavors like contiguous-file can't bypass it
-			await preventWritingThroughSymlink(dest, realOutputPath);
 			// Never honor setuid/setgid/sticky bits from an archive
 			const mode = (entry.mode & 0o777) & ~umask; // eslint-disable-line no-bitwise
-			await writeFile(dest, entry.data, {mode});
-			await utimes(dest, now, entry.mtime);
+			// O_NOFOLLOW so a symlink planted at dest can't redirect the write
+			const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW || 0); // eslint-disable-line no-bitwise
+			const handle = await openFile(dest, flags, mode).catch(error => {
+				if (error.code === 'ELOOP') {
+					throw new Error('Refusing to write into a symlink');
+				}
+
+				throw error;
+			});
+			try {
+				await handle.writeFile(entry.data);
+				await handle.utimes(now, entry.mtime);
+			} finally {
+				await handle.close();
+			}
 		}
 	};
 
