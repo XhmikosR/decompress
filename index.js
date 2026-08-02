@@ -1,4 +1,6 @@
 import {Buffer} from 'node:buffer';
+// realpath follows symlinks, so a target that escapes via a symlink is caught
+import {realpath} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
@@ -12,8 +14,9 @@ import stripDirs from 'strip-dirs';
 const link = promisify(fs.link);
 const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
+// Node 18 fs.promises.realpath rejects Windows trailing-dot dir names; the callback realpath does not
+const realpathDir = promisify(fs.realpath);
 const readlink = promisify(fs.readlink);
-const realpath = promisify(fs.realpath);
 const symlink = promisify(fs.symlink);
 const utimes = promisify(fs.utimes);
 const writeFile = promisify(fs.writeFile);
@@ -70,7 +73,7 @@ const isInsideOutput = (target, root) => {
 	return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
 };
 
-const safeMakeDir = (dir, realOutputPath) => realpath(dir)
+const safeMakeDir = (dir, realOutputPath) => realpathDir(dir)
 	.catch(_ => {
 		const parent = path.dirname(dir);
 		return safeMakeDir(parent, realOutputPath);
@@ -80,7 +83,7 @@ const safeMakeDir = (dir, realOutputPath) => realpath(dir)
 			throw new Error('Refusing to create a directory outside the output path.');
 		}
 
-		return mkdir(dir, {recursive: true}).then(() => realpath(dir));
+		return mkdir(dir, {recursive: true}).then(() => realpathDir(dir));
 	});
 
 const ensureLinkTargetInsideOutput = (linkname, linkBase, realOutputPath) => {
