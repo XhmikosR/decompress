@@ -10,6 +10,7 @@ import fs from 'graceful-fs';
 import stripDirs from 'strip-dirs';
 
 const link = promisify(fs.link);
+const lstat = promisify(fs.lstat);
 const mkdir = promisify(fs.mkdir);
 const readFile = promisify(fs.readFile);
 const readlink = promisify(fs.readlink);
@@ -61,17 +62,53 @@ const ensureLinkTargetInsideOutput = async (linkname, linkBase, realOutputPath) 
 		throw new Error(`Refusing to create a link pointing outside the output directory: ${target}`);
 	}
 
-	// An existing target may itself be a symlink that escapes, so check its real path
-	let realTarget;
-	try {
-		realTarget = await realpath(target);
-	} catch {
-		// Dangling link; the path check above covers it
-		return target;
-	}
+	// `path.resolve` collapses `a/..` lexically, so an in-archive symlink at `a`
+	// can mask a `..` escape. Walk the linkname component-by-component, following
+	// symlinks at each step like the OS does at access time, and reject if any
+	// intermediate or final path leaves the output directory.
+	let current = linkBase;
+	const components = linkname.split(path.sep).filter(Boolean);
 
-	if (!isInsideOutput(realTarget, realOutputPath)) {
-		throw new Error(`Refusing to create a link pointing outside the output directory: ${realTarget}`);
+	for (const component of components) {
+		if (component === '.') {
+			continue;
+		}
+
+		if (component === '..') {
+			current = path.dirname(current);
+			if (!isInsideOutput(current, realOutputPath)) {
+				throw new Error(`Refusing to create a link pointing outside the output directory: ${current}`);
+			}
+
+			continue;
+		}
+
+		current = path.join(current, component);
+
+		let stat;
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			stat = await lstat(current);
+		} catch {
+			// Component does not exist yet (e.g. dangling symlink target).
+			// The lexical check above already covered the final resolved path.
+			if (!isInsideOutput(current, realOutputPath)) {
+				throw new Error(`Refusing to create a link pointing outside the output directory: ${current}`);
+			}
+
+			continue;
+		}
+
+		if (stat.isSymbolicLink()) {
+			// eslint-disable-next-line no-await-in-loop
+			const symTarget = await readlink(current);
+			const resolved = path.resolve(path.dirname(current), symTarget);
+			if (!isInsideOutput(resolved, realOutputPath)) {
+				throw new Error(`Refusing to create a link pointing outside the output directory: ${resolved}`);
+			}
+
+			current = resolved;
+		}
 	}
 
 	return target;

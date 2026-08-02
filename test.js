@@ -290,6 +290,22 @@ test.serial('throw when a symlink target points outside the output directory', a
 	}
 });
 
+(isWindows ? test.skip : test.serial)('throw when a symlink chain masks a `..` escape', async t => {
+	// `path.resolve` collapses `a/..` lexically, so an in-archive symlink at `a`
+	// can hide a `..` escape from the lexical containment check. The guard must
+	// walk the linkname component-by-component and follow the in-archive symlink.
+	const secret = path.join(__dirname, 'secret.txt');
+	await fs.writeFile(secret, 'SECRET');
+	try {
+		await t.throwsAsync(async () => {
+			await decompress(path.join(__dirname, 'fixtures', 'symlink_chain_escape.tar.gz'), 'dist');
+		}, {message: /Refusing/});
+		t.is(await fs.readFile(secret, 'utf8'), 'SECRET');
+	} finally {
+		await fs.rm(secret, {force: true});
+	}
+});
+
 (isWindows ? test.skip : test.serial)('throw when a contiguous-file entry would write through a symlink', async t => {
 	// `contiguous-file` is a regular-file payload that isn't the `file` type the
 	// guard used to key on, so an escaping symlink at its path would slip through
