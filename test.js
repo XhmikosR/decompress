@@ -364,6 +364,18 @@ test.serial('allows top-level file', async t => {
 	}
 });
 
+(isWindows ? test.skip : test.serial)('throw when a hardlink points at an in-output symlink', async t => {
+	const hardlinkToSymlink = () => [
+		{
+			type: 'symlink', path: 'sub/link', linkname: '../secret.txt', mode: 0o777, mtime: new Date(), data: Buffer.alloc(0),
+		},
+		{
+			type: 'link', path: 'x', linkname: 'sub/link', mode: 0o644, mtime: new Date(), data: Buffer.alloc(0),
+		},
+	];
+	await t.throwsAsync(decompress(Buffer.from(''), 'dist', {plugins: [hardlinkToSymlink]}), {message: /Refusing to hardlink to a symlink/});
+});
+
 // Pass isWindows explicitly so these run on every OS, not just Windows
 test('assertSafeEntryPath rejects NUL bytes on every platform', t => {
 	for (const name of ['a\u0000b', 'dir1/dir2/a\u0000b', 'a\u0000b/c.txt']) {
