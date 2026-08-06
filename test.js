@@ -323,6 +323,21 @@ test.serial('throw when a symlink target points outside the output directory', a
 	t.is(mode & 0o100, 0o100); // eslint-disable-line no-bitwise
 });
 
+(isWindows ? test.skip : test.serial)('gives a file with no mode default permissions, not 0', async t => {
+	const noModePlugin = () => [{
+		type: 'file',
+		path: 'nomode',
+		mtime: new Date(),
+		data: Buffer.from('x'),
+	}];
+
+	const umask = process.umask();
+	await decompress(Buffer.from(''), 'dist', {plugins: [noModePlugin]});
+
+	const {mode} = await fs.stat(path.join(__dirname, 'dist', 'nomode'));
+	t.is(mode & 0o777, 0o666 & ~umask); // eslint-disable-line no-bitwise
+});
+
 test.serial('allows top-level file', async t => {
 	const files = await decompress(path.join(__dirname, 'fixtures', 'top_level_example.tar.gz'), 'dist');
 	t.is(files.length, 1);

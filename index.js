@@ -236,8 +236,9 @@ const extractFile = async (input, output, options) => {
 			await ensureLinkTargetInsideOutput(entry.linkname, realDestinationDir, realOutputPath);
 			await symlink(entry.linkname, dest);
 		} else {
-			// Never honor setuid/setgid/sticky bits from an archive
-			const mode = (entry.mode & 0o777) & ~umask; // eslint-disable-line no-bitwise
+			// Never honor setuid/setgid/sticky bits from an archive; a missing mode
+			// would otherwise coerce to 0 and leave the file with no permissions
+			const mode = ((entry.mode ?? 0o666) & 0o777) & ~umask; // eslint-disable-line no-bitwise
 			// O_NOFOLLOW so a symlink planted at dest can't redirect the write
 			const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW || 0); // eslint-disable-line no-bitwise
 			const handle = await openFile(dest, flags, mode).catch(error => {
